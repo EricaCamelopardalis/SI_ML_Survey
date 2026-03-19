@@ -32,25 +32,20 @@ import pickle
  
  # Data Access Helpers
 
-def load_survey_data(notebook_path):
+def load_survey_data(project_root):
     # Load Survey_df, Likert_Guide_df, and Column_Metadata from standard paths.
-    # Pass Path().resolve() from the calling notebook as notebook_path.
-    project_root = Path(notebook_path).parents[1]
-    data_dir = project_root / "Clean_Data_Resources"
- 
+    # Pass Project_Root directly no path derivation done here.
+    data_dir = Path(project_root) / "Clean_Data_Resources"
     Survey_df = pd.read_parquet(data_dir / "Survey_df_Text_Parsed.parquet")
     Likert_Guide_df = pd.read_csv(data_dir / "Survey_Results_Likert_Guide.csv")
- 
     with open(data_dir / "column_metadata.json", "r") as f:
         Column_Metadata = json.load(f)
- 
     return Survey_df, Likert_Guide_df, Column_Metadata
  
  
-def load_tfidf_vectorizer(t_col, notebook_path):
+def load_tfidf_vectorizer(t_col, project_root):
     # Load a fitted TfidfVectorizer for a given T_ column.
-    project_root = Path(notebook_path).parents[1]
-    vectorizer_dir = project_root / "Clean_Data_Resources" / "Vectorizers"
+    vectorizer_dir = Path(project_root) / "Clean_Data_Resources" / "Vectorizers"
     vectorizer_path = vectorizer_dir / f"tfidf_vectorizer_{t_col}.pkl"
     with open(vectorizer_path, "rb") as f:
         return pickle.load(f)
@@ -176,7 +171,7 @@ def prepare_model_data(t_col, r_col, Survey_df, Likert_Guide_df):
     return subset, y, subset["features"].tolist()
  
  
-def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, notebook_path, vectorizer=None):
+def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, project_root, vectorizer=None):
     agreement_idx = get_agreement_index(r_col, Survey_df, Likert_Guide_df)
     subset = Survey_df.loc[agreement_idx].copy()
     subset = subset.dropna(subset=[r_col])
@@ -185,9 +180,8 @@ def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, notebook_
     y = (subset[r_col] > 3).astype(int)
     if len(y) < 50 or y.nunique() < 2:
         return None, None, None
-    # Use pre-loaded vectorizer if provided, otherwise load from disk.
     if vectorizer is None:
-        vectorizer = load_tfidf_vectorizer(t_col, notebook_path)
+        vectorizer = load_tfidf_vectorizer(t_col, project_root)
     X = vectorizer.transform(subset[t_col + "_lemma_str"].tolist())
     return X, y, vectorizer
 
@@ -242,6 +236,7 @@ def get_top_features_by_ratio(nb_model, vocab, n=20):
 
 # Results formatting
 
+# Used for BOW.
 def build_comparison_df(Results_By_Technique):
     # Flatten Results_By_Technique into a single comparison DataFrame.
     # Top_Features excluded.
@@ -265,3 +260,20 @@ def build_comparison_df(Results_By_Technique):
                 "Vocab Coverage": r["Vocab_Coverage"],
             })
     return pd.DataFrame(rows)
+
+# Used for TF IDF.
+def build_summary_tfidf_df(results):
+    # Flatten a list of TF-IDF model result dicts into a summary DataFrame.
+    # Vectorizer and Top_Features excluded: inspect separately.
+    return pd.DataFrame([{
+        "Pairing": r["Label"],
+        "N": r["N_Train"] + r["N_Test"],
+        "Pos %": r["Pos_Pct"],
+        "Neg %": r["Neg_Pct"],
+        "Accuracy": r["Accuracy"],
+        "F1": r["F1"],
+        "Precision": r["Precision"],
+        "Recall": r["Recall"],
+        "ROC AUC": r["ROC_AUC"],
+        "MCC": r["MCC"],
+    } for r in results])

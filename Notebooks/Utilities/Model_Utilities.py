@@ -9,35 +9,34 @@ import numpy as np
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
-from imblearn.over_sampling import SMOTE
 
 # Utilities imports.
 from SI_Utilities import prepare_model_data_tfidf, evaluate_model
  
 # Local utilities.
-import sys
 from pathlib import Path
 
 # Naive Bayes with TF-IDF
  
 def split_and_train_tfidf_nb(X, y):
-    # 80/20 stratified split.
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=2026, stratify=y
     )
-    # SMOTE on training set only: never resample the test set.
-    smote = SMOTE(random_state=2026)
-    X_train_r, y_train_r = smote.fit_resample(X_train, y_train)
-    nb = MultinomialNB()
-    nb.fit(X_train_r, y_train_r)
-    return nb, X_test, y_train_r, y_test
+    # Invert class frequencies as priors.
+    neg_count = (y_train == 0).sum()
+    pos_count = (y_train == 1).sum()
+    total = len(y_train)
+    class_prior = [neg_count / total, pos_count / total]
+    nb = MultinomialNB(class_prior=class_prior)
+    nb.fit(X_train, y_train)
+    return nb, X_test, y_train, y_test
  
  
-def run_tfidf_nb(t_col, r_col, label, Survey_df, Likert_Guide_df, Notebook_Dir, vectorizer=None):
+def run_tfidf_nb(t_col, r_col, label, Survey_df, Likert_Guide_df, project_root, vectorizer=None):
     # Prepare TF-IDF features and binarized labels for a given T/R pairing.
     # Returns None if data is insufficient or only one class is present.
     X, y, vectorizer = prepare_model_data_tfidf(
-        t_col, r_col, Survey_df, Likert_Guide_df, Notebook_Dir, vectorizer
+        t_col, r_col, Survey_df, Likert_Guide_df, project_root, vectorizer
     )
     if X is None:
         print(f"Skipping {label}.")
@@ -46,6 +45,7 @@ def run_tfidf_nb(t_col, r_col, label, Survey_df, Likert_Guide_df, Notebook_Dir, 
     result = evaluate_model(
         nb, None, X_test, y_train, y_test, None, t_col, r_col, label, y
     )
-    # Store vectorizer for feature extraction later.
+    # Store vectorizer and model for feature extraction and live predictions later.
     result["Vectorizer"] = vectorizer
+    result["Model"] = nb
     return result
