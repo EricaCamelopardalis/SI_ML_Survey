@@ -54,3 +54,77 @@ def load_tfidf_vectorizer(t_col, notebook_path):
     vectorizer_path = vectorizer_dir / f"tfidf_vectorizer_{t_col}.pkl"
     with open(vectorizer_path, "rb") as f:
         return pickle.load(f)
+
+# Configurations.
+
+Leader_R_Cols = [
+    "R_Leader_Helps_Understanding_encoded",
+    "R_Leader_Subject_Competence_encoded",
+    "R_Leader_Has_Plan_encoded",
+    "R_Leader_Willing_To_Help_encoded",
+]
+ 
+Primary_Pairs = [
+    ("T_Collaboration_Understanding", "R_Collaborative_Activities_encoded"),
+    ("T_Leader_Performance_Suggestions", "R_Leader_Helps_Understanding_encoded"),
+    ("T_Leader_Performance_Suggestions", "R_Leader_Subject_Competence_encoded"),
+    ("T_Leader_Performance_Suggestions", "R_Leader_Has_Plan_encoded"),
+    ("T_Leader_Performance_Suggestions", "R_Leader_Willing_To_Help_encoded"),
+    ("T_Leader_Performance_Suggestions", "R_Leader_Average_encoded"),
+    ("T_Other_Suggestions", "R_Overall_Session_Helpfulness_encoded"),
+    ("T_Program_Overall_Suggestions", "R_Overall_Session_Helpfulness_encoded"),
+]
+ 
+# Likert scale encodings for reference.
+agreement_scale = {
+    "Strongly agree": 5,
+    "Moderately agree": 4,
+    "Neither disagree nor agree": 3,
+    "Moderately disagree": 2,
+    "Strongly disagree": 1,
+    "Unable to judge": None,
+}
+ 
+helpfulness_scale = {
+    "Extremely helpful": 5,
+    "Very helpful": 4,
+    "Moderately helpful": 3,
+    "Slightly helpful": 2,
+    "Not at all helpful": 1,
+    "Unable to judge": None,
+}
+ 
+rating_encoding = {**agreement_scale, **helpfulness_scale}
+
+# Agreement scale filtering
+ 
+def get_agreement_index(r_col, Survey_df, Likert_Guide_df):
+    # Return row indices from Survey_df that used the Agreement scale
+    # for the given R_ column.
+    col_name = r_col.replace("_encoded", "")
+ 
+    if col_name == "R_Leader_Average":
+        # Intersect Agreement rows across all four leader columns.
+        indices = None
+        for leader_col in Leader_R_Cols:
+            agreement_rows = Likert_Guide_df[
+                (Likert_Guide_df["Column"] == leader_col.replace("_encoded", "")) &
+                (Likert_Guide_df["Scale"] == "Agreement")
+            ][["Discipline", "Course_Code", "Semester", "Year"]]
+            mask = Survey_df[["Discipline", "Course_Code", "Semester", "Year"]].merge(
+                agreement_rows, how="inner"
+            ).index
+            indices = mask if indices is None else indices.intersection(mask)
+        return indices
+ 
+    agreement_rows = Likert_Guide_df[
+        (Likert_Guide_df["Column"] == col_name) &
+        (Likert_Guide_df["Scale"] == "Agreement")
+    ][["Discipline", "Course_Code", "Semester", "Year"]]
+ 
+    mask = Survey_df.merge(
+        agreement_rows,
+        on=["Discipline", "Course_Code", "Semester", "Year"],
+        how="inner"
+    ).index
+    return mask
