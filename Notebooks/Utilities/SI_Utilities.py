@@ -128,3 +128,20 @@ def get_agreement_index(r_col, Survey_df, Likert_Guide_df):
         how="inner"
     ).index
     return mask
+
+# Feature construction.
+# BOW.
+ 
+def build_bow(token_lists):
+    # Build a sparse CSR bag-of-words matrix from a list of token lists.
+    # Returns (matrix, vocab) where vocab is a sorted list of unique tokens.
+    vocab = sorted(set(tok for tokens in token_lists for tok in tokens))
+    vocab_index = {tok: i for i, tok in enumerate(vocab)}
+    # BOW is ~99% zeros: sparse storage avoids memory issues.
+    matrix = lil_matrix((len(token_lists), len(vocab)), dtype=np.int32)
+    for i, tokens in enumerate(token_lists):
+        counts = Counter(tokens)
+        for tok, count in counts.items():
+            if tok in vocab_index:
+                matrix[i, vocab_index[tok]] = count
+    return csr_matrix(matrix), vocab
