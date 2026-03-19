@@ -138,6 +138,7 @@ def build_bow(token_lists):
     vocab = sorted(set(tok for tokens in token_lists for tok in tokens))
     vocab_index = {tok: i for i, tok in enumerate(vocab)}
     # BOW is ~99% zeros: sparse storage avoids memory issues.
+    # Learned this one the hard way, funnily enough. 
     matrix = lil_matrix((len(token_lists), len(vocab)), dtype=np.int32)
     for i, tokens in enumerate(token_lists):
         counts = Counter(tokens)
@@ -145,3 +146,56 @@ def build_bow(token_lists):
             if tok in vocab_index:
                 matrix[i, vocab_index[tok]] = count
     return csr_matrix(matrix), vocab
+
+# Data preparation.
+def prepare_model_data(t_col, r_col, Survey_df, Likert_Guide_df):
+    # Filter to Agreement-scale rows, build BOW features, binarize labels.
+    # Returns (subset, y, features) or (None, None, None) if insufficient data.
+    agreement_idx = get_agreement_index(r_col, Survey_df, Likert_Guide_df)
+    subset = Survey_df.loc[agreement_idx].copy()
+ 
+    # Combine lemmas and bigrams element-wise: cast to list to avoid
+    # numpy array concatenation issues after index filtering.
+    subset["features"] = subset.apply(
+        lambda row: list(row[t_col + "_lemmas"]) + list(row[t_col + "_bigrams"]),
+        axis=1
+    )
+ 
+    # Drop rows with no text, no rating, or neutral rating.
+    # Threes mean "neither agree nor disagree": ambiguous for binary classification.
+    subset = subset.dropna(subset=[r_col])
+    subset = subset[subset["features"].apply(len) > 0]
+    subset = subset[subset[r_col] != 3]
+ 
+    # Binarize: above 3 = positive (1), below 3 = negative (0).
+    y = (subset[r_col] > 3).astype(int)
+ 
+    if len(y) < 50 or y.nunique() < 2:
+        return None, None, None
+ 
+    return subset, y, subset["features"].tolist()
+ 
+ 
+def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, notebook_path):
+    # Filter to Agreement-scale rows, build TF-IDF features, binarize labels.
+    # Loads the fitted vectorizer from disk for the given T_ column.
+    # Returns (X, y, vectorizer) or (None, None, None) if insufficient data.
+    agreement_idx = get_agreement_index(r_col, Survey_df, Likert_Guide_df)
+    subset = Survey_df.loc[agreement_idx].copy()
+ 
+    # Drop rows with no text, no rating, or neutral rating.
+    subset = subset.dropna(subset=[r_col])
+    subset = subset[subset[t_col + "_lemma_str"].str.strip() != ""]
+    subset = subset[subset[r_col] != 3]
+ 
+    # Binarize: above 3 = positive (1), below 3 = negative (0).
+    y = (subset[r_col] > 3).astype(int)
+ 
+    if len(y) < 50 or y.nunique() < 2:
+        return None, None, None
+ 
+    # Load fitted vectorizer and transform lemma strings.
+    vectorizer = load_tfidf_vectorizer(t_col, notebook_path)
+    X = vectorizer.transform(subset[t_col + "_lemma_str"].tolist())
+ 
+    return X, y, vectorizer
