@@ -199,3 +199,39 @@ def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, notebook_
     X = vectorizer.transform(subset[t_col + "_lemma_str"].tolist())
  
     return X, y, vectorizer
+
+def evaluate_model(model, vocab, X_test, y_train, y_test,
+                   vocab_coverage, t_col, r_col, label, y):
+    # Compute all classification metrics and extract top features.
+    # Works for any model with predict() and predict_proba() methods.
+    from sklearn.metrics import (
+        accuracy_score, roc_auc_score, f1_score,
+        precision_score, recall_score, matthews_corrcoef, confusion_matrix,
+    )
+    y_pred = model.predict(X_test)
+    y_prob = model.predict_proba(X_test)[:, 1]
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+    pos_pct = round(y.mean() * 100, 1)
+    neg_pct = round(100 - pos_pct, 1)
+    return {
+        "Label": label,
+        "T_Col": t_col,
+        "R_Col": r_col,
+        "N_Train": len(y_train),
+        "N_Test": len(y_test),
+        "Pos_Pct": pos_pct,
+        "Neg_Pct": neg_pct,
+        "Vocab_Size": len(vocab) if vocab is not None else None,
+        "Vocab_Coverage": vocab_coverage,
+        "Accuracy": round(accuracy_score(y_test, y_pred), 3),
+        "F1": round(f1_score(y_test, y_pred), 3),
+        "Precision": round(precision_score(y_test, y_pred), 3),
+        "Recall": round(recall_score(y_test, y_pred), 3),
+        "ROC_AUC": round(roc_auc_score(y_test, y_prob), 3),
+        "MCC": round(matthews_corrcoef(y_test, y_pred), 3),
+        "TP": int(tp),
+        "TN": int(tn),
+        "FP": int(fp),
+        "FN": int(fn),
+        "Top_Features": get_top_features_by_ratio(model, vocab) if vocab is not None else None,
+    }
