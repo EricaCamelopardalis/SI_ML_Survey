@@ -10,6 +10,9 @@ from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import train_test_split
 from imblearn.over_sampling import SMOTE
+
+# Utilities imports.
+from SI_Utilities import prepare_model_data_tfidf, evaluate_model
  
 # Local utilities.
 import sys
@@ -30,12 +33,11 @@ def split_and_train_tfidf_nb(X, y):
     return nb, X_test, y_train_r, y_test
  
  
-def run_tfidf_nb(t_col, r_col, label, Survey_df, Likert_Guide_df, Notebook_Dir):
+def run_tfidf_nb(t_col, r_col, label, Survey_df, Likert_Guide_df, Notebook_Dir, vectorizer=None):
     # Prepare TF-IDF features and binarized labels for a given T/R pairing.
     # Returns None if data is insufficient or only one class is present.
-    from SI_Utilities import prepare_model_data_tfidf, evaluate_model
     X, y, vectorizer = prepare_model_data_tfidf(
-        t_col, r_col, Survey_df, Likert_Guide_df, Notebook_Dir
+        t_col, r_col, Survey_df, Likert_Guide_df, Notebook_Dir, vectorizer
     )
     if X is None:
         print(f"Skipping {label}.")

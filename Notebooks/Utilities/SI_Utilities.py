@@ -176,38 +176,25 @@ def prepare_model_data(t_col, r_col, Survey_df, Likert_Guide_df):
     return subset, y, subset["features"].tolist()
  
  
-def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, notebook_path):
-    # Filter to Agreement-scale rows, build TF-IDF features, binarize labels.
-    # Loads the fitted vectorizer from disk for the given T_ column.
-    # Returns (X, y, vectorizer) or (None, None, None) if insufficient data.
+def prepare_model_data_tfidf(t_col, r_col, Survey_df, Likert_Guide_df, notebook_path, vectorizer=None):
     agreement_idx = get_agreement_index(r_col, Survey_df, Likert_Guide_df)
     subset = Survey_df.loc[agreement_idx].copy()
- 
-    # Drop rows with no text, no rating, or neutral rating.
     subset = subset.dropna(subset=[r_col])
     subset = subset[subset[t_col + "_lemma_str"].str.strip() != ""]
     subset = subset[subset[r_col] != 3]
- 
-    # Binarize: above 3 = positive (1), below 3 = negative (0).
     y = (subset[r_col] > 3).astype(int)
- 
     if len(y) < 50 or y.nunique() < 2:
         return None, None, None
- 
-    # Load fitted vectorizer and transform lemma strings.
-    vectorizer = load_tfidf_vectorizer(t_col, notebook_path)
+    # Use pre-loaded vectorizer if provided, otherwise load from disk.
+    if vectorizer is None:
+        vectorizer = load_tfidf_vectorizer(t_col, notebook_path)
     X = vectorizer.transform(subset[t_col + "_lemma_str"].tolist())
- 
     return X, y, vectorizer
 
 def evaluate_model(model, vocab, X_test, y_train, y_test,
                    vocab_coverage, t_col, r_col, label, y):
     # Compute all classification metrics and extract top features.
     # Works for any model with predict() and predict_proba() methods.
-    from sklearn.metrics import (
-        accuracy_score, roc_auc_score, f1_score,
-        precision_score, recall_score, matthews_corrcoef, confusion_matrix,
-    )
     y_pred = model.predict(X_test)
     y_prob = model.predict_proba(X_test)[:, 1]
     tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
@@ -235,3 +222,46 @@ def evaluate_model(model, vocab, X_test, y_train, y_test,
         "FN": int(fn),
         "Top_Features": get_top_features_by_ratio(model, vocab) if vocab is not None else None,
     }
+
+# Feature importance.
+
+def get_top_features_by_ratio(nb_model, vocab, n=20):
+    # Extract top n tokens most distinctive to each class using likelihood ratios.
+    # Heck yeah information criterions. 
+    # More informative than raw log probabilities which favor common tokens.
+    log_prob_neg = nb_model.feature_log_prob_[0]
+    log_prob_pos = nb_model.feature_log_prob_[1]
+    neg_ratio = log_prob_neg - log_prob_pos
+    pos_ratio = log_prob_pos - log_prob_neg
+    top_neg_idx = neg_ratio.argsort()[-n:][::-1]
+    top_pos_idx = pos_ratio.argsort()[-n:][::-1]
+    return {
+        0: [vocab[i] for i in top_neg_idx],
+        1: [vocab[i] for i in top_pos_idx],
+    }
+
+# Results formatting
+
+def build_comparison_df(Results_By_Technique):
+    # Flatten Results_By_Technique into a single comparison DataFrame.
+    # Top_Features excluded.
+    import pandas as pd
+    rows = []
+    for technique_name, results in Results_By_Technique.items():
+        for r in results:
+            rows.append({
+                "Technique": technique_name,
+                "Pairing": r["Label"],
+                "N": r["N_Train"] + r["N_Test"],
+                "Vocab Size": r["Vocab_Size"],
+                "Pos %": r["Pos_Pct"],
+                "Neg %": r["Neg_Pct"],
+                "Accuracy": r["Accuracy"],
+                "F1": r["F1"],
+                "Precision": r["Precision"],
+                "Recall": r["Recall"],
+                "ROC AUC": r["ROC_AUC"],
+                "MCC": r["MCC"],
+                "Vocab Coverage": r["Vocab_Coverage"],
+            })
+    return pd.DataFrame(rows)
